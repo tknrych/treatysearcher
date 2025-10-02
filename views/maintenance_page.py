@@ -4,7 +4,7 @@ from core.database import init_db, update_glossary_db
 
 def display_maintenance_page():
     """辞書データの編集ページの描画と機能"""
-    st.subheader("辞書データの編集")
+    st.subheader("翻訳辞書データの編集")
     st.info("テーブルを直接編集し、「変更を保存」ボタンを押してください。行の追加・削除も可能です。")
     
     conn = init_db()

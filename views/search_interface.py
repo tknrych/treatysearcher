@@ -54,7 +54,7 @@ def display_search_interface():
             if start_date > end_date:
                 st.error("エラー: 終了日は開始日以降に設定してください。")
 
-    tab_text_search, tab_title_search, tab_maintenance = st.tabs(["✍️ 条約本文検索", "📜 条約名検索", "📖 辞書データの編集"])
+    tab_text_search, tab_title_search, tab_maintenance = st.tabs(["✍️ 条約本文検索", "📜 条約名検索", "📖 翻訳辞書データの編集"])
 
     with tab_title_search:
         st.subheader("条約名で検索")
