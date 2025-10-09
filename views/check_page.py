@@ -2,13 +2,13 @@ import streamlit as st
 import re
 import os
 from core.azure_clients import get_clients
+from utils import find_non_joyo_kanji
 
 # --- データ読み込み（共通関数） ---
 @st.cache_data
 def load_reference_doc(file_name: str):
     """
     指定された参照資料テキストファイルを読み込みます。
-    ファイルはキャッシュされ、アプリのパフォーマンスを向上させます。
     """
     try:
         current_script_path = os.path.abspath(__file__)
@@ -23,12 +23,18 @@ def load_reference_doc(file_name: str):
         return None
 
 # --- メインの描画関数 ---
-def display_check_page(text_to_check: str):
+def display_check_page(text_to_check: str, original_text: str):
     """文章校正・レビュー処理用の専用ページを描画"""
     st.title("📝 文章校正・レビュー処理")
 
-    st.markdown("##### AI翻訳結果（原文）")
-    st.info(text_to_check)
+    st.markdown("##### 英語原文")
+    with st.container(border=True):
+        st.markdown(original_text.replace('\n', '  \n'))
+
+    st.markdown("##### AI翻訳結果")
+    with st.container(border=True):
+        st.markdown(text_to_check.replace('\n', '  \n'))
+
     st.markdown("##### 編集領域")
     edited_text = st.text_area(
         "レビュー対象テキスト",
@@ -50,14 +56,31 @@ def display_check_page(text_to_check: str):
     ]
 
     # --- 各種確認機能のタブ ---
-    tab_names = [d["tab_name"] for d in review_definitions]
+    tab_names = ["常用漢字確認"] + [d["tab_name"] for d in review_definitions]
     tabs = st.tabs(tab_names)
+
+    # --- ★ 「常用漢字確認」タブ ---
+    with tabs[0]:
+        st.info("編集領域のテキストに常用漢字以外の漢字が含まれていないかを確認します。")
+        if st.button("常用漢字のみが使用されているかを確認する"):
+            if not edited_text.strip():
+                st.warning("テキストが入力されていません。")
+            else:
+                st.write("---")
+                with st.spinner("確認中..."):
+                    non_joyo_list = find_non_joyo_kanji(edited_text)
+                    if non_joyo_list:
+                        st.error(f"常用漢字以外の漢字が見つかりました ({len(non_joyo_list)}字):")
+                        # 漢字を見やすく表示
+                        st.text(" , ".join(non_joyo_list))
+                    else:
+                        st.success("✅ 常用漢字以外の漢字は見つかりませんでした。")
 
     # --- 各レビュータブの描画 ---
     for i, definition in enumerate(review_definitions):
-        with tabs[i]:
+        with tabs[i + 1]:
             st.info(f"編集領域のテキストを{definition['tab_name']}に基づきレビューします。")
-            if st.button(f"{definition['tab_name']}レビューを実行する"):
+            if st.button(f"{definition['tab_name']}レビューを実行する", key=f"review_button_{i}"):
                 if not edited_text.strip():
                     st.warning("テキストが入力されていません。")
                 else:
@@ -125,6 +148,6 @@ def perform_review(document_text: str, reference_filename: str, reference_name: 
             
             st.subheader(f"📒 {reference_name}レビュー結果")
             with st.container(border=True):
-                st.markdown(result)
+                st.markdown(result.replace('\n', '  \n'))
     except Exception as e:
         st.error(f"レビュー実行中にエラーが発生しました: {e}")

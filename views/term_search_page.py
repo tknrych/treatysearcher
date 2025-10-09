@@ -18,7 +18,8 @@ def display_term_search_results_page(term: str):
         query_text=term, 
         enable_title_search=False,
         mode_override="文字列検索のみ",
-        match_type_override="完全一致 (Phrase)"
+        match_type_override="完全一致 (Phrase)",
+        lang_mode_override="言語自動判定"
     )
 
     st.caption(metadata)

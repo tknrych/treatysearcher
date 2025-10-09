@@ -64,7 +64,7 @@ def display_search_interface():
         with col1_title:
             run_clicked_title = st.button("🔍条約名検索", key="search_button_title")
         with col2_title:
-            st.button("🧹入力消去　　", key="clear_button_title", on_click=_clear_title_tab_results)
+            st.button("🧹入力消去　", key="clear_button_title", on_click=_clear_title_tab_results)
 
         if run_clicked_title and q_title.strip():
             st.session_state.last_query_title = q_title
@@ -153,7 +153,7 @@ def display_search_interface():
             for i, sentence_data in enumerate(st.session_state.segmented_sentences):
                 with st.expander(f"文 {i+1}: {sentence_data['text'][:80]}..."):
                     original_text = sentence_data['text']
-                    st.markdown(f"📘**原文:**\n> {original_text.replace(chr(10), chr(10) + '> ')}")
+                    st.markdown(f"📘**原文:**\n> {original_text.replace(chr(10), '  ' + chr(10) + '> ')}")
 
                     c1, c2, c3, c4, _, _ = st.columns([2, 2, 2, 2, 3, 3])
                     with c1:
@@ -204,10 +204,14 @@ def display_search_interface():
                         st.markdown("---")
                         st.markdown("🔤**AI翻訳結果:**")
                         translation_data = sentence_data["ai_translation"]
-                        st.info(f"{translation_data['text']} (翻訳スコア: {translation_data['score']:.2f})")
+                        with st.container(border=True):
+                            display_text = f"{translation_data['text']} (翻訳スコア: {translation_data['score']:.2f})"
+                            st.markdown(display_text.replace('\n', '  \n'))
                         translated_text = translation_data['text']
                         if st.button("📝 平仄確認処理", key=f"check_text_{i}"):
-                            url_to_open = f"?check_text={urllib.parse.quote(translated_text)}"
+                            original_text_to_pass = sentence_data.get('text', '')
+                            url_to_open = f"?check_text={urllib.parse.quote(translated_text)}&original_text={urllib.parse.quote(original_text_to_pass)}"
+
                             st.components.v1.html(f"<script>window.open('{url_to_open}', '_blank');</script>", height=0)
 
                     # 2. 適用する辞書用語
