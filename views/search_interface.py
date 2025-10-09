@@ -235,7 +235,7 @@ def display_search_interface():
                                             st.error(f"検索中にエラーが発生しました: {e}")
                                     else:
                                         st.warning("キーワードを入力してください。")
-                                    st.rerun()
+                                    # st.rerun()
                             with fw_c2:
                                 add_button_disabled = st.session_state[f"fw_search_results_{i}"] is None
                                 if st.button("選択行を追加", key=f"fw_add_results_{i}", disabled=add_button_disabled):
