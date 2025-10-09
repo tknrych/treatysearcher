@@ -1,6 +1,8 @@
+import os
 import re
 import html
 import streamlit as st
+from pathlib import Path
 
 def is_japanese(text: str) -> bool:
     """テキストに日本語が含まれるかを判定する"""
@@ -84,3 +86,49 @@ def _clear_analysis_tab_results():
             del st.session_state[k]
     if "analysis_input" in st.session_state:
         st.session_state.analysis_input = ""
+
+@st.cache_data
+def load_joyo_kanji():
+    """
+    ./ref_docs/joyo-kanji.txt から常用漢字のセットを読み込みます。
+    結果はキャッシュされ、アプリのパフォーマンスを向上させます。
+    """
+    try:
+        # このファイルの絶対パスを取得
+        current_script_path = os.path.abspath(__file__)
+        # このファイルの親ディレクトリ（つまりプロジェクトのルート）を取得
+        project_root = os.path.dirname(current_script_path)
+        # 正しいパスを組み立てる
+        joyo_kanji_path = os.path.join(project_root, "ref_docs", "joyo-kanji.txt")
+        
+        with open(joyo_kanji_path, "r", encoding="utf-8") as f:
+            # ファイル内のすべての文字を連結し、空白文字を削除してセットを作成
+            kanji_text = f.read()
+            return set(kanji_text.replace(" ", "").replace("\n", ""))
+    except FileNotFoundError:
+        # エラーメッセージも正しいパスを表示するように修正
+        st.error(f"常用漢字ファイルが見つかりません: {joyo_kanji_path}")
+        return set()
+
+def find_non_joyo_kanji(text: str) -> list[str]:
+    """
+    与えられたテキストから常用漢字以外の漢字を抽出し、リストとして返します。
+
+    Args:
+        text (str): チェック対象のテキスト。
+
+    Returns:
+        list[str]: テキストに含まれる常用漢字以外の漢字のリスト。
+                   見つからない場合は空のリストを返します。
+    """
+    joyo_kanji_set = load_joyo_kanji()
+    if not joyo_kanji_set:
+        return []
+
+    # テキストから全ての漢字を重複なく抽出
+    kanji_in_text = set(re.findall(r'[\u4e00-\u9FFF]', text))
+
+    # 常用漢字セットに含まれていない漢字を特定
+    non_joyo_kanji = [kanji for kanji in kanji_in_text if kanji not in joyo_kanji_set]
+
+    return sorted(non_joyo_kanji)

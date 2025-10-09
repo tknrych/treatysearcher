@@ -38,6 +38,7 @@ treaty_id_to_display = query_params.get("view_treaty")
 text_to_analyze_encoded = query_params.get("analyze_text")
 term_to_search_encoded = query_params.get("search_term")
 text_to_check_encoded = query_params.get("check_text")
+original_text_encoded = query_params.get("original_text") 
 
 # パラメータに応じて描画するページを切り替え
 if treaty_id_to_display:
@@ -50,7 +51,8 @@ elif term_to_search_encoded:
     display_term_search_results_page(decoded_term)
 elif text_to_check_encoded:
     decoded_text = urllib.parse.unquote(text_to_check_encoded)
-    display_check_page(decoded_text)
+    original_text = urllib.parse.unquote(original_text_encoded)
+    display_check_page(decoded_text, original_text)
 else:
     # デフォルトはメインの検索インターフェース
     display_search_interface()
