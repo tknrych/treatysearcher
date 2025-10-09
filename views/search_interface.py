@@ -9,10 +9,10 @@ from core.nlp import load_nlp_model
 from core.search import perform_search
 from core.translation import get_translation_with_retry
 from utils import (
-    _clear_title_tab_results, 
-    _clear_analysis_tab_results, 
-    mask_list_markers, 
-    unmask_list_markers, 
+    _clear_title_tab_results,
+    _clear_analysis_tab_results,
+    mask_list_markers,
+    unmask_list_markers,
     is_japanese,
     merge_server_highlights,
     client_side_highlight,
@@ -47,7 +47,7 @@ def display_search_interface():
         if st.checkbox("効力発生日で絞り込み", key="date_filter_enabled"):
             today = datetime.now().date()
             default_start = datetime(1950, 1, 1).date()
-            
+
             start_date = st.date_input("開始日", value=default_start, key="start_date")
             end_date = st.date_input("終了日", value=today, key="end_date")
 
@@ -101,7 +101,7 @@ def display_search_interface():
                 else:
                     query_to_display = st.session_state.last_query_title
                     highlighted_title = client_side_highlight(jp_title, query_to_display)
-                
+
                 st.markdown(f"##### {highlighted_title}", unsafe_allow_html=True)
                 res_col1, res_col2 = st.columns([0.75, 0.25])
                 with res_col1:
@@ -129,7 +129,7 @@ def display_search_interface():
             no_split_clicked = st.button("📝文章分割しない", key="no_split_button")
         with col3_tab2:
             st.button("🧹入力消去　　　", key="clear_button_analysis", on_click=_clear_analysis_tab_results)
-        
+
         if start_analysis_clicked or no_split_clicked:
             if not pasted_text.strip():
                 st.warning("テキストを入力してください。")
@@ -151,11 +151,20 @@ def display_search_interface():
             st.write(f"▼ {num_sents} 件の文に分割されました ▼" if num_sents > 1 else "▼ 1 件の文として処理します ▼")
 
             for i, sentence_data in enumerate(st.session_state.segmented_sentences):
+                # フリーワード検索用の状態を初期化
+                if f"fw_search_results_{i}" not in st.session_state:
+                    st.session_state[f"fw_search_results_{i}"] = None
+                if f"show_fw_search_{i}" not in st.session_state:
+                    st.session_state[f"show_fw_search_{i}"] = False
+                if f"fw_query_{i}" not in st.session_state:
+                    st.session_state[f"fw_query_{i}"] = ""
+
                 with st.expander(f"文 {i+1}: {sentence_data['text'][:80]}..."):
                     original_text = sentence_data['text']
                     st.markdown(f"📘**原文:**\n> {original_text.replace(chr(10), '  ' + chr(10) + '> ')}")
 
-                    c1, c2, c3, c4, _, _ = st.columns([2, 2, 2, 2, 3, 3])
+                    # ボタン用の列を5列に変更
+                    c1, c2, c3, c_new, c4, _ = st.columns([2, 2, 2, 2, 2, 2])
                     with c1:
                         if st.button("🔍類似条約文検索", key=f"search_{i}"):
                             try:
@@ -179,6 +188,15 @@ def display_search_interface():
                                     term_list_for_display.append({"en": en_term, "ja": ja_term, "checked": False})
                             st.session_state.segmented_sentences[i]["found_terms"] = term_list_for_display
                             st.rerun()
+                    # フリーワード検索ボタン
+                    with c_new:
+                        if st.button("💬フリーワード検索", key=f"fw_search_show_{i}"):
+                            st.session_state[f"show_fw_search_{i}"] = not st.session_state[f"show_fw_search_{i}"]
+                            # 検索窓を開くときに以前の検索結果をクリア
+                            if st.session_state[f"show_fw_search_{i}"]:
+                                st.session_state[f"fw_search_results_{i}"] = None
+                                st.session_state[f"fw_query_{i}"] = ""
+                            st.rerun()
                     with c4:
                         if sentence_data.get("search_results"):
                             if st.button("🔤参照して日本語訳", key=f"translate_all_{i}"):
@@ -198,6 +216,84 @@ def display_search_interface():
                                     st.rerun()
                         else:
                             st.button("🔤参照して日本語訳", disabled=True, key=f"translate_all_{i}_disabled", help="先に類似文検索を実行してください。")
+
+                    # ### 変更 ### フリーワード検索のUIとロジック
+                    if st.session_state[f"show_fw_search_{i}"]:
+                        with st.container(border=True):
+                            st.markdown("##### 💬 フリーワードで条約本文を検索")
+                            fw_query = st.text_input("検索キーワードを入力", key=f"fw_query_input_{i}", value=st.session_state[f"fw_query_{i}"])
+                            st.session_state[f"fw_query_{i}"] = fw_query # 入力をstateに保存
+
+                            fw_c1, fw_c2, fw_c3, _ = st.columns([1,1,1,4])
+                            with fw_c1:
+                                if st.button("検索実行", key=f"fw_search_run_{i}"):
+                                    if fw_query.strip():
+                                        try:
+                                            results, _ = perform_search(search_client, aoai_client, embed_model, fw_query, enable_title_search=False)
+                                            st.session_state[f"fw_search_results_{i}"] = [{"checked": False, **res} for res in results]
+                                        except Exception as e:
+                                            st.error(f"検索中にエラーが発生しました: {e}")
+                                    else:
+                                        st.warning("キーワードを入力してください。")
+                                    st.rerun()
+                            with fw_c2:
+                                add_button_disabled = st.session_state[f"fw_search_results_{i}"] is None
+                                if st.button("選択行を追加", key=f"fw_add_results_{i}", disabled=add_button_disabled):
+                                    selected_fw_results = [res for res in st.session_state[f"fw_search_results_{i}"] if res["checked"]]
+                                    if not st.session_state.segmented_sentences[i].get("search_results"):
+                                        st.session_state.segmented_sentences[i]["search_results"] = []
+                                    # チェックボックスの状態をリセットして追加
+                                    for res in selected_fw_results: res["checked"] = False
+                                    st.session_state.segmented_sentences[i]["search_results"] = selected_fw_results + st.session_state.segmented_sentences[i]["search_results"]
+                                    st.session_state[f"show_fw_search_{i}"] = False # UIを閉じる
+                                    st.rerun()
+                            with fw_c3:
+                                if st.button("閉じる", key=f"fw_close_{i}"):
+                                    st.session_state[f"show_fw_search_{i}"] = False
+                                    st.rerun()
+
+                            # ### 変更 ### フリーワード検索結果を詳細表示
+                            if st.session_state[f"fw_search_results_{i}"] is not None:
+                                st.markdown("---")
+                                st.markdown("##### 検索結果")
+                                is_ja_q_for_highlight = is_japanese(fw_query)
+
+                                for fw_idx, fw_res in enumerate(st.session_state[f"fw_search_results_{i}"]):
+                                    with st.container(border=True):
+                                        check_col, content_col = st.columns([0.08, 0.92])
+                                        with check_col:
+                                            is_checked = st.checkbox(" ", value=fw_res.get("checked", False), key=f"fw_res_check_{i}_{fw_idx}", label_visibility="collapsed")
+                                            st.session_state[f"fw_search_results_{i}"][fw_idx]["checked"] = is_checked
+
+                                        with content_col:
+                                            res_en, res_ja, source_file = fw_res.get("en_text", ""), fw_res.get("jp_text", ""), fw_res.get("sourceFile", "")
+                                            highlights = fw_res.get("@search.highlights") or {}
+                                            en_snips, ja_snips = highlights.get("en_text", []), highlights.get("jp_text", [])
+                                            jp_title = fw_res.get("jp_title", "")
+                                            source_file_display = source_file.replace(".csv", ".pdf")
+                                            title_prefix = f"**{jp_title}**" if jp_title else ""
+                                            valid_date_str = fw_res.get("valid_date", "")
+                                            date_display = ""
+                                            if valid_date_str:
+                                                try:
+                                                    formatted_date = datetime.fromisoformat(valid_date_str.replace('Z', '+00:00')).strftime('%Y年%m月%d日')
+                                                    date_display = f" | 効力発生日: **{formatted_date}**"
+                                                except (ValueError, TypeError):
+                                                    date_display = f" | 効力発生日: **{valid_date_str}**"
+                                            metadata_str = f"{title_prefix}{date_display} | Source: **{source_file_display}#{fw_res['line_number']}** | Score: {fw_res['@search.score']:.4f}"
+                                            res_c1, res_c2 = st.columns([0.8, 0.2])
+                                            with res_c1: st.markdown(metadata_str)
+                                            with res_c2: st.markdown(f'<a href="?view_treaty={urllib.parse.quote(source_file)}" target="_blank" rel="noopener noreferrer">条約全文を開く</a>', unsafe_allow_html=True)
+
+                                            if is_ja_q_for_highlight:
+                                                ja_html_highlighted = merge_server_highlights(res_ja, ja_snips) if ja_snips else client_side_highlight(res_ja, fw_query)
+                                                en_html_highlighted = _escape_html(res_en)
+                                            else:
+                                                en_html_highlighted = merge_server_highlights(res_en, en_snips) if en_snips else client_side_highlight(res_en, fw_query)
+                                                ja_html_highlighted = _escape_html(res_ja)
+                                            st.markdown(f"**英語原文:**<br>{en_html_highlighted}", unsafe_allow_html=True)
+                                            st.markdown(f"**日本語訳:**<br>{ja_html_highlighted}", unsafe_allow_html=True)
+
 
                     # 1. AI翻訳結果
                     if "ai_translation" in sentence_data and sentence_data["ai_translation"]:
@@ -280,6 +376,6 @@ def display_search_interface():
                                         ja_html_highlighted = _escape_html(res_ja)
                                     st.markdown(f"**英語原文:**<br>{en_html_highlighted}", unsafe_allow_html=True)
                                     st.markdown(f"**日本語訳:**<br>{ja_html_highlighted}", unsafe_allow_html=True)
-    
+
     with tab_maintenance:
         display_maintenance_page()
