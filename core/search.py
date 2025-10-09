@@ -4,14 +4,14 @@ from datetime import datetime
 from azure.search.documents.models import VectorizedQuery
 from utils import is_japanese
 
-def perform_search(search_client, aoai_client, embed_model, query_text: str, enable_title_search: bool, mode_override: str = None, match_type_override: str = None) -> tuple[list, str]:
+def perform_search(search_client, aoai_client, embed_model, query_text: str, enable_title_search: bool, mode_override: str = None, match_type_override: str = None, lang_mode_override: str = None) -> tuple[list, str]:
     """Azure Search を実行する"""
     t0 = time.perf_counter()
     
     mode_now = mode_override if mode_override is not None else st.session_state.get("mode_radio")
     match_type_now = match_type_override if match_type_override is not None else st.session_state.get("match_type_radio")
-    lang_mode = st.session_state.get("lang_mode_radio")
-    
+    lang_mode = lang_mode_override if lang_mode_override is not None else st.session_state.get("lang_mode_radio")
+        
     if enable_title_search:
         is_ja_q, text_fields, vec_field, mode_now = True, ["jp_title"], "japaneseVector", "文字列検索のみ"
     else:
