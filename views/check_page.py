@@ -1,8 +1,9 @@
 import streamlit as st
 import os
 import time
+import urllib.parse
 from core.azure_clients import get_clients
-from utils import find_non_joyo_kanji
+from utils import find_non_joyo_kanji, _escape_html
 
 # --- データ読み込み（共通関数） ---
 @st.cache_data
@@ -109,20 +110,20 @@ def generate_consolidated_report(document_text: str, non_joyo_report: str, indiv
         return None, f"統合レポート生成中にエラーが発生しました: {e}"
 
 # --- メインの描画関数 ---
-def display_check_page(text_to_check: str, original_text: str):
+def display_check_page(text_to_check: str, original_text: str, reference_treaties: list = None):
     """文章校正・レビュー処理用の専用ページを描画"""
     st.set_page_config(layout="wide")
     st.title("📝 文章校正・レビュー処理")
 
-    st.markdown("##### 英語原文")
+    st.markdown("##### 📘英語原文")
     with st.container(border=True):
         st.markdown(original_text.replace('\n', '  \n'))
 
-    st.markdown("##### AI翻訳結果")
+    st.markdown("##### 🔤AI翻訳結果")
     with st.container(border=True):
         st.markdown(text_to_check.replace('\n', '  \n'))
 
-    st.markdown("##### 編集領域")
+    st.markdown("##### ✅編集領域")
     edited_text = st.text_area(
         "レビュー対象テキスト",
         value=text_to_check,
@@ -130,20 +131,35 @@ def display_check_page(text_to_check: str, original_text: str):
         label_visibility="collapsed"
     )
 
+    # 類似文参照データの表示
+    if reference_treaties:
+        st.markdown("---")
+        st.markdown("🔍**参照用 類似条約文:**")
+        for i, ref in enumerate(reference_treaties):
+            with st.container(border=True):
+                jp_title = ref.get("jp_title", "")
+                source_file_display = ref.get("sourceFile", "").replace(".csv", ".pdf")
+                title_prefix = f"**{jp_title}**" if jp_title else ""
+                metadata_str = f"{title_prefix} | Source: **{source_file_display}#{ref.get('line_number', '')}** | Score: {ref.get('score', 0):.4f}"
+                st.markdown(metadata_str)
+                st.markdown(f"**英語原文:**<br>{_escape_html(ref.get('en_text', ''))}", unsafe_allow_html=True)
+                st.markdown(f"**日本語訳:**<br>{_escape_html(ref.get('jp_text', ''))}", unsafe_allow_html=True)
+
     st.divider()
 
     # --- レビュー機能の定義（優先順位） ---
     review_definitions = [
-        {"tab_name": "条約邦文テキスト作成要領", "filename": "ref_doc_1.txt", "role": "あなたは、日本の内閣法制局または外務省条約局に所属する、条約の邦訳テキスト審査を専門とする熟練した担当官です。"},
-        {"tab_name": "新訂ワークブック法制執務", "filename": "ref_doc_2.txt", "role": "あなたは、日本の法制執務に精通した専門家です。"},
+        {"tab_name": "公用文作成の考え方", "filename": "ref_doc_7.txt", "role": "あなたは、分かりやすい公用文を作成する専門家です。"},
         {"tab_name": "法令用字用語必携", "filename": "ref_doc_3.txt", "role": "あなたは、日本の法令文書における用字用語の専門家です。"},
         {"tab_name": "最新公用文用字用語例集", "filename": "ref_doc_4.txt", "role": "あなたは、現代日本の公用文の表現に詳しい専門家です。"},
         {"tab_name": "法令用語の常識", "filename": "ref_doc_5.txt", "role": "あなたは、日本の法令用語に関する深い知識を持つ専門家です。"},
-        {"tab_name": "公用文作成の考え方", "filename": "ref_doc_7.txt", "role": "あなたは、分かりやすい公用文を作成する専門家です。"}
+        {"tab_name": "新訂ワークブック法制執務", "filename": "ref_doc_2.txt", "role": "あなたは、日本の法制執務に精通した専門家です。"},
+        {"tab_name": "条約邦文テキスト作成要領", "filename": "ref_doc_1.txt", "role": "あなたは、日本の内閣法制局または外務省条約局に所属する、条約の邦訳テキスト審査を専門とする熟練した担当官です。"}
     ]
+
     review_order = [d["tab_name"] for d in review_definitions]
 
-    st.header("用字・用語統合確認")
+    st.header("📚用字・用語統合確認")
     st.info("下のボタンを押すと、常用漢字チェックと全ての参照資料に基づいたレビューが順番に実行され、最後に単一の最終レポートが生成されます。処理には数分かかることがあります。")
 
     if st.button("統合レポートを生成する", type="primary"):
@@ -189,7 +205,7 @@ def display_check_page(text_to_check: str, original_text: str):
                         review_order=review_order
                     )
                     if error:
-                        st.error(f"最終レポートの生成中にエラーが発生しました: {error}")
+                        st.error(f"最終レポートの生成中にエラーが発生しました: {e}")
                         error_occurred = True
                     else:
                         st.session_state.final_report = final_report
