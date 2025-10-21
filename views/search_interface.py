@@ -47,10 +47,26 @@ def display_search_interface():
         st.subheader("日付フィルター")
         if st.checkbox("効力発生日で絞り込み", key="date_filter_enabled"):
             today = datetime.now().date()
-            default_start = datetime(1950, 1, 1).date()
+            default_start = datetime(1900, 1, 1).date()
 
-            start_date = st.date_input("開始日", value=default_start, key="start_date")
-            end_date = st.date_input("終了日", value=today, key="end_date")
+            min_allowed_date = datetime(1900, 1, 1).date()
+            max_allowed_date = today
+
+            start_date = st.date_input(
+                "開始日", 
+                value=default_start, 
+                key="start_date",
+                min_value=min_allowed_date,
+                max_value=max_allowed_date
+            )
+            
+            end_date = st.date_input(
+                "終了日", 
+                value=today, 
+                key="end_date",
+                min_value=min_allowed_date,
+                max_value=max_allowed_date
+            )
 
             if start_date > end_date:
                 st.error("エラー: 終了日は開始日以降に設定してください。")
@@ -252,6 +268,7 @@ def display_search_interface():
                                     'sourceFile': res.get('sourceFile', ''),
                                     'jp_title': res.get('jp_title', ''),
                                     'valid_date': res.get('valid_date', ''),
+                                    'country_area': res.get('country_area', ''),
                                     'line_number': res.get('line_number', ''),
                                     'score': res.get('@search.score', 0)
                                 }
@@ -267,8 +284,8 @@ def display_search_interface():
                     # ### 変更 ### フリーワード検索のUIとロジック
                     if st.session_state[f"show_fw_search_{i}"]:
                         with st.container(border=True):
-                            st.markdown("##### 💬 フリーワードで条約本文を検索")
-                            fw_query = st.text_input("検索キーワードを入力", key=f"fw_query_input_{i}", value=st.session_state[f"fw_query_{i}"])
+                            st.markdown("##### 💬 フリーワードで条約を検索（本文・条約名）")
+                            fw_query = st.text_input("検索キーワードを入力（文字列検索）", key=f"fw_query_input_{i}", value=st.session_state[f"fw_query_{i}"])
                             st.session_state[f"fw_query_{i}"] = fw_query # 入力をstateに保存
 
                             fw_c1, fw_c2, fw_c3, _ = st.columns([1,1,1,4])
@@ -276,14 +293,19 @@ def display_search_interface():
                                 if st.button("🔍検索実行　　", key=f"fw_search_run_{i}"):
                                     if fw_query.strip():
                                         try:
-                                            results, _ = perform_search(search_client, aoai_client, embed_model, fw_query, enable_title_search=False)
+                                            # 検索モードを「文字列検索のみ」、一致方法を「部分一致 (OR)」に固定
+                                            results, _ = perform_search(
+                                                search_client, aoai_client, embed_model, fw_query, 
+                                                enable_title_search=False,
+                                                mode_override="文字列検索のみ",
+                                                match_type_override="部分一致 (OR)"
+                                            )
                                             st.session_state[f"fw_search_results_{i}"] = [{"checked": False, **res} for res in results]
                                             st.session_state[f"highlight_query_{i}"] = fw_query # ハイライトクエリを更新
                                         except Exception as e:
                                             st.error(f"検索中にエラーが発生しました: {e}")
                                     else:
                                         st.warning("キーワードを入力してください。")
-                                    # st.rerun()
                             with fw_c2:
                                 add_button_disabled = st.session_state[f"fw_search_results_{i}"] is None
                                 if st.button("➕選択行を追加", key=f"fw_add_results_{i}", disabled=add_button_disabled):
@@ -309,6 +331,8 @@ def display_search_interface():
 
                                 for fw_idx, fw_res in enumerate(st.session_state[f"fw_search_results_{i}"]):
                                     with st.container(border=True):
+                                        # ### 修正 ###
+                                        # この行が抜けていたため UnboundLocalError が発生していました
                                         check_col, content_col = st.columns([0.08, 0.92])
                                         with check_col:
                                             is_checked = st.checkbox(" ", value=fw_res.get("checked", False), key=f"fw_res_check_{i}_{fw_idx}", label_visibility="collapsed")
@@ -317,10 +341,15 @@ def display_search_interface():
                                         with content_col:
                                             res_en, res_ja, source_file = fw_res.get("en_text", ""), fw_res.get("jp_text", ""), fw_res.get("sourceFile", "")
                                             highlights = fw_res.get("@search.highlights") or {}
-                                            en_snips, ja_snips = highlights.get("en_text", []), highlights.get("jp_text", [])
+                                            en_snips, ja_snips, title_snips = highlights.get("en_text", []), highlights.get("jp_text", []), highlights.get("jp_title", [])
                                             jp_title = fw_res.get("jp_title", "")
+                                            
+                                            if title_snips:
+                                                title_prefix = f"**{' ... '.join(title_snips)}**"
+                                            else:
+                                                title_prefix = f"**{client_side_highlight(jp_title, highlight_query)}**" if jp_title else ""
+
                                             source_file_display = source_file.replace(".csv", ".pdf")
-                                            title_prefix = f"**{jp_title}**" if jp_title else ""
                                             valid_date_str = fw_res.get("valid_date", "")
                                             date_display = ""
                                             if valid_date_str:
@@ -329,17 +358,17 @@ def display_search_interface():
                                                     date_display = f" | 効力発生日: **{formatted_date}**"
                                                 except (ValueError, TypeError):
                                                     date_display = f" | 効力発生日: **{valid_date_str}**"
-                                            metadata_str = f"{title_prefix}{date_display} | Source: **{source_file_display}#{fw_res['line_number']}** | Score: {fw_res['@search.score']:.4f}"
+
+                                            country_area = fw_res.get("country_area", "")
+                                            country_area_display = f" | 国・地域名: **{country_area}**" if country_area else ""
+                                            metadata_str = f"{title_prefix}{date_display}{country_area_display} | Source: **{source_file_display}#{fw_res['line_number']}** | Score: {fw_res['@search.score']:.4f}"
                                             res_c1, res_c2 = st.columns([0.8, 0.2])
-                                            with res_c1: st.markdown(metadata_str)
+                                            with res_c1: st.markdown(metadata_str, unsafe_allow_html=True)
                                             with res_c2: st.markdown(f'<a href="?view_treaty={urllib.parse.quote(source_file)}" target="_blank" rel="noopener noreferrer">条約全文を開く</a>', unsafe_allow_html=True)
 
-                                            if is_ja_q_for_highlight:
-                                                ja_html_highlighted = merge_server_highlights(res_ja, ja_snips) if ja_snips else client_side_highlight(res_ja, highlight_query)
-                                                en_html_highlighted = _escape_html(res_en)
-                                            else:
-                                                en_html_highlighted = merge_server_highlights(res_en, en_snips) if en_snips else client_side_highlight(res_en, highlight_query)
-                                                ja_html_highlighted = _escape_html(res_ja)
+                                            en_html_highlighted = merge_server_highlights(res_en, en_snips) if en_snips else client_side_highlight(res_en, highlight_query)
+                                            ja_html_highlighted = merge_server_highlights(res_ja, ja_snips) if ja_snips else client_side_highlight(res_ja, highlight_query)
+ 
                                             st.markdown(f"**英語原文:**<br>{en_html_highlighted}", unsafe_allow_html=True)
                                             st.markdown(f"**日本語訳:**<br>{ja_html_highlighted}", unsafe_allow_html=True)
 
@@ -404,7 +433,9 @@ def display_search_interface():
                                             date_display_tab2 = f" | 効力発生日: **{formatted_date}**"
                                         except (ValueError, TypeError):
                                             date_display_tab2 = f" | 効力発生日: **{valid_date_str}**"
-                                    metadata_str = f"{title_prefix_tab2}{date_display_tab2} | Source: **{source_file_display_tab2}#{result_item['line_number']}** | Score: {result_item['@search.score']:.4f}"
+                                    country_area_tab2 = result_item.get("country_area", "")
+                                    country_area_display_tab2 = f" | 国・地域名: **{country_area_tab2}**" if country_area_tab2 else ""
+                                    metadata_str = f"{title_prefix_tab2}{date_display_tab2}{country_area_display_tab2} | Source: **{source_file_display_tab2}#{result_item['line_number']}** | Score: {result_item['@search.score']:.4f}"
                                     res_col1_tab2, res_col2_tab2 = st.columns([0.8, 0.2])
                                     with res_col1_tab2: st.markdown(metadata_str)
                                     with res_col2_tab2: st.markdown(f'<a href="?view_treaty={urllib.parse.quote(source_file)}" target="_blank" rel="noopener noreferrer">条約全文を開く</a>', unsafe_allow_html=True)
